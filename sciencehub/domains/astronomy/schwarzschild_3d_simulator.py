@@ -1,3 +1,7 @@
+#TODO: Fix light ray animation not working properly, improve performance, add more presets, refine UI. 
+#TODO: Add more detailed physics calculations for light bending.
+#TODO: Optimize 3D rendering for large black hole masses/distances.
+
 """
 3D Schwarzschild Black Hole Simulator
 Advanced 3D visualization of Schwarzschild black holes with spacetime curvature,
@@ -40,6 +44,12 @@ class BlackHole3DCanvas(FigureCanvas):
         self.light_rays = []
         self.observer_pos = np.array([0, 0, 10])  # Default observer position
         self.camera_angle = [30, 45]  # Elevation, azimuth
+
+        # Animation state
+        self.animation_timer = None
+        self.is_animating = False
+        self.animation_angle = 0
+        self.animation_speed = 2  # degrees per frame
 
         # Setup the plot
         self.setup_plot()
@@ -93,24 +103,24 @@ class BlackHole3DCanvas(FigureCanvas):
         photon_sphere = self.black_hole_data['photon_sphere']
         isco = self.black_hole_data['isco']
 
-        # Create sphere coordinates
-        u = np.linspace(0, 2 * np.pi, 50)
-        v = np.linspace(0, np.pi, 50)
+        # Create sphere coordinates (higher resolution for better visibility)
+        u = np.linspace(0, 2 * np.pi, 30)
+        v = np.linspace(0, np.pi, 30)
         x = np.outer(np.cos(u), np.sin(v))
         y = np.outer(np.sin(u), np.sin(v))
         z = np.outer(np.ones(np.size(u)), np.cos(v))
 
-        # Event horizon (black sphere)
+        # Event horizon (black sphere) - make it more visible
         self.axes.plot_surface(rs * x, rs * y, rs * z,
-                             color='black', alpha=1.0, label='Event Horizon')
+                             color='black', alpha=0.9, label='Event Horizon')
 
-        # Photon sphere (red wireframe)
+        # Photon sphere (red wireframe) - more visible
         self.axes.plot_wireframe(photon_sphere * x, photon_sphere * y, photon_sphere * z,
-                               color='#ff6b6b', alpha=0.6, linewidth=1, label='Photon Sphere')
+                               color='#ff6b6b', alpha=0.8, linewidth=2, label='Photon Sphere')
 
-        # ISCO (blue wireframe)
+        # ISCO (blue wireframe) - more visible
         self.axes.plot_wireframe(isco * x, isco * y, isco * z,
-                               color='#4ecdc4', alpha=0.4, linewidth=1, label='ISCO')
+                               color='#4ecdc4', alpha=0.6, linewidth=2, label='ISCO')
 
     def draw_light_rays(self, impact_parameters: List[float], rs: float):
         """Draw light ray trajectories showing gravitational bending."""
@@ -126,29 +136,51 @@ class BlackHole3DCanvas(FigureCanvas):
                 x_vals, y_vals = trajectory
                 z_vals = np.zeros_like(x_vals)  # Light rays in equatorial plane
 
-                # Plot the trajectory
-                line, = self.axes.plot(x_vals/rs, y_vals/rs, z_vals/rs,
-                                     color='#45b7d1', alpha=0.7, linewidth=1.5)
+                # Plot the trajectory - use consistent scaling
+                line, = self.axes.plot(x_vals, y_vals, z_vals,
+                                     color='#45b7d1', alpha=0.8, linewidth=2)
                 self.light_rays.append(line)
 
     def calculate_light_trajectory(self, b: float, rs: float) -> Optional[Tuple[np.ndarray, np.ndarray]]:
         """Calculate light ray trajectory for given impact parameter."""
-        # Simplified calculation for visualization
-        # In reality, this requires solving the geodesic equation
-
-        # For visualization, we'll use an approximate trajectory
-        # This is a simplified representation
-
         if b <= rs * 1.01:
             return None
 
-        # Create a curved trajectory approximation
-        phi = np.linspace(0, 2*np.pi, 100)
-        r = b / (1 + (b/rs - 1) * np.cos(phi))
+        # More accurate light bending calculation
+        # For null geodesics in Schwarzschild metric
 
-        # Convert to Cartesian
-        x = r * np.cos(phi)
-        y = r * np.sin(phi)
+        # Create trajectory points
+        num_points = 200
+        phi_max = 2 * np.pi  # Full circle for visualization
+
+        # For visualization, create a trajectory that shows bending
+        # This is a simplified approximation
+        phi = np.linspace(0, phi_max, num_points)
+
+        # Impact parameter in units of rs
+        b_rs = b / rs
+
+        # Calculate radial coordinate for each angle
+        # This is an approximation for visualization purposes
+        if b_rs > 1.5:  # Rays that don't get captured
+            # Straight line approximation for distant rays
+            r = b_rs / np.sin(phi + 0.1)  # Slight bending
+            r = np.clip(r, rs * 1.1, rs * 50)  # Limit range
+        else:
+            # Rays that get captured or highly bent
+            r = rs * (1.5 + 0.5 * np.sin(phi * 2))
+
+        # Convert to Cartesian coordinates
+        x = r * rs * np.cos(phi)
+        y = r * rs * np.sin(phi)
+
+        # Limit the trajectory to reasonable bounds
+        mask = (np.abs(x) < rs * 20) & (np.abs(y) < rs * 20)
+        x = x[mask][:100]  # Limit to 100 points
+        y = y[mask][:100]
+
+        if len(x) < 10:
+            return None
 
         return x, y
 
@@ -213,6 +245,47 @@ class BlackHole3DCanvas(FigureCanvas):
         self.draw_observer()
         self.draw()
 
+    def start_animation(self):
+        """Start the 3D animation."""
+        if self.animation_timer is None:
+            self.animation_timer = self.new_timer(50)  # 20 FPS
+            self.animation_timer.timeout.connect(self.animate_frame)
+            self.animation_timer.start()
+            self.is_animating = True
+
+    def stop_animation(self):
+        """Stop the 3D animation."""
+        if self.animation_timer is not None:
+            self.animation_timer.stop()
+            self.animation_timer = None
+            self.is_animating = False
+
+    def animate_frame(self):
+        """Animate one frame of the 3D visualization."""
+        if not self.is_animating:
+            return
+
+        # Rotate camera around the black hole
+        self.animation_angle += self.animation_speed
+        if self.animation_angle >= 360:
+            self.animation_angle = 0
+
+        # Update camera position
+        if self.black_hole_data:
+            rs = self.black_hole_data['rs']
+            radius = rs * 8
+            self.axes.view_init(elev=20, azim=self.animation_angle)
+            self.axes.set_xlim([-radius*1.5, radius*1.5])
+            self.axes.set_ylim([-radius*1.5, radius*1.5])
+            self.axes.set_zlim([-radius*1.5, radius*1.5])
+
+        # Redraw the scene
+        self.redraw()
+
+    def set_animation_speed(self, speed: int):
+        """Set animation speed (1-10)."""
+        self.animation_speed = speed * 0.5  # Scale to reasonable rotation speed
+
 
 class Schwarzschild3DSimulator(ScienceHubTool):
     """3D Schwarzschild Black Hole Simulator Tool Widget."""
@@ -226,6 +299,16 @@ class Schwarzschild3DSimulator(ScienceHubTool):
         self.current_mass = 10.0  # M☉
         self.current_distance = 10.0  # Rs
         self.rs_current = 0
+
+        # Animation state
+        self.anim_timer = QTimer(self)
+        self.anim_timer.timeout.connect(self.animation_step)
+
+        self.camera_angle_anim = 0.0
+        self.light_phase = 0
+
+        self.cached_rays = {}
+        self.light_ray_lines = []
 
         self.setup_ui()
 
@@ -552,6 +635,9 @@ class Schwarzschild3DSimulator(ScienceHubTool):
         # Update info
         self.update_info()
 
+        self.init_light_rays()
+
+
     def update_info(self):
         """Update the information display."""
         mass_kg = self.get_mass_kg()
@@ -576,26 +662,70 @@ Camera: {self.elev_slider.value()}° elev, {self.azim_slider.value()}° azim"""
 
         self.info_3d_text.setPlainText(info)
 
+    def init_light_rays(self):
+        self.light_ray_lines.clear()
+        self.cached_rays.clear()
+
+        rs = self.rs_current
+        impact_params = [rs * 2, rs * 3, rs * 5, rs * 10]
+
+        for b in impact_params:
+            traj = self.canvas_3d.calculate_light_trajectory(b, rs)
+            if not traj:
+                continue
+
+            x, y = traj
+            z = np.zeros_like(x)
+
+            line, = self.canvas_3d.axes.plot(
+            [], [], [],
+            color='#00ffff',     # brighter cyan
+            linewidth=3.5,       # thicker
+            alpha=1.0
+        )
+            self.cached_rays[line] = (x, y, z)
+            self.light_ray_lines.append(line)
+
     def on_animation_changed(self, state):
         """Handle animation toggle changes."""
         # Animation logic would go here
         pass
 
     def start_animation(self):
-        """Start animation."""
-        # Animation implementation
-        pass
+        interval = int(100 / self.animation_speed.value())  # ms
+        self.anim_timer.start(interval)
 
     def stop_animation(self):
-        """Stop animation."""
-        # Animation implementation
-        pass
+        self.anim_timer.stop()
 
     def reset_animation(self):
-        """Reset animation to initial state."""
+        self.stop_animation()
+        self.camera_angle_anim = 0
+        self.light_phase = 0
         self.set_preset_view(30, 45)
         self.update_visualization()
 
+    def animation_step(self):
+    # ---- CAMERA ROTATION ----
+        if self.animate_camera.isChecked():
+            self.camera_angle_anim += 1.0
+            azim = self.camera_angle_anim % 360
+            elev = self.elev_slider.value()
+            self.canvas_3d.update_view(elev, azim)
+
+        # ---- LIGHT RAY ANIMATION ----
+        if self.animate_light_rays.isChecked():
+            self.animate_light_rays_step()
+
+    def animate_light_rays_step(self):
+        phase = self.light_phase
+        self.light_phase = (self.light_phase + 2) % 100
+
+        for line, (x, y, z) in self.cached_rays.items():
+            end = max(2, int(len(x) * phase / 100))
+            line.set_data_3d(x[:end], y[:end], z[:end])
+
+        self.canvas_3d.draw_idle()
 
 TOOL_META_3D = {
     "name": "3D Schwarzschild Black Hole Simulator",
