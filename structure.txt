@@ -261,6 +261,7 @@ sciencehub/  — Repo root; everything needed to build, run, test, and ship Scie
 │  │  ├─ themes/  — UI theme mapping (fonts, spacing, colors chosen by UI layer).
 │  │  │  └─ .keep  — Keeps directory in Git even if empty.
 │  │  └─ bindings/  — Adapter layer for a concrete UI framework (Qt/Tk/Web/TUI).
+│  │     └─styles.css
 │  │     └─ .keep  — Keeps directory in Git even if empty.
 │  ├─ api/  — External interfaces: CLI, REST, WebSocket schemas.
 │  │  ├─ __init__.py  — API package marker.
@@ -296,6 +297,9 @@ sciencehub/  — Repo root; everything needed to build, run, test, and ship Scie
 │  │  │  └─ .keep  — Keeps directory in Git even if empty.
 │  │  └─ fr/  — French translation resources.
 │  │     └─ .keep  — Keeps directory in Git even if empty.
+│  ├─ main/  — Has the Main Window logic
+│  │  ├─ main_window.py
+│  │  ├─ tool_registry.py
 │  ├─ config/  — Config files and feature toggles.
 │  │  ├─ __init__.py  — Config package marker (and config loader hooks).
 │  │  ├─ default.yaml  — Default config shipped with the app.

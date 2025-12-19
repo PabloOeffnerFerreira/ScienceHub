@@ -1,0 +1,62 @@
+QMainWindow {
+    background-color: #2b2b2b;
+    color: #ffffff;
+}
+
+QWidget#sidebar {
+    background-color: #1b1b1b;
+    border: 2px solid #555555;
+    border-radius: 10px;
+    margin: 5px;
+}
+
+QQWidget#sidebar QPushButton {
+    background-color: #1b5a7e;
+    border: none;
+    border-radius: 8px;
+    padding: 10px;
+    color: #ffffff;
+    font-size: 14px;
+    margin: 2px;
+}
+
+QWidget#sidebar QPushButton:hover {
+    background-color: #2479a6;
+}
+
+QWidget#sidebar QPushButton:pressed {
+    background-color: #14455f;
+}
+
+QWidget#sidebar QPushButton:checked {
+    background-color: #0078d4;
+}
+
+/* Specific style for the "Open" button */
+
+QWidget#sidebar QPushButton#openButton {
+    background-color: #28a745;
+    font-weight: bold;
+}
+
+QWidget#sidebar QPushButton#openButton:hover {
+    background-color: #218838;
+}
+
+QWidget#sidebar QPushButton#openButton:pressed {
+    background-color: #1e7e34;
+}
+
+QWidget#sidebar QComboBox {
+    background-color: #404040;
+    border: 1px solid #555555;
+    border-radius: 4px;
+    padding: 5px;
+    color: #ffffff;
+    font-size: 12px;
+}
+
+QLabel {
+    color: #ffffff;
+    font-size: 16px;
+}
