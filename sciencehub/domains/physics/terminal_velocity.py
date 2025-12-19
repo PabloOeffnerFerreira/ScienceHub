@@ -3,14 +3,6 @@ Terminal Velocity Calculator
 A comprehensive physics calculator for terminal velocity with advanced GUI features.
 """
 
-TOOL_META = {
-    "name": "Terminal Velocity",
-    "domain": "Physics",
-    "icon": "📉",
-    "description": "Advanced terminal velocity simulator with fluid dynamics",
-    "difficulty": "Intermediate"
-}
-
 from sciencehub.ui.components.tool_base import ScienceHubTool
 import sys
 import math
@@ -1241,6 +1233,7 @@ class TerminalVelocityTool(ScienceHubTool):
 
         if display_mode == "basic":
             info = ("Terminal Velocity Calculation Results:\n\n"
+                    "Drag coefficients are approximate and assume steady, subsonic flow with fixed orientation.\n\n"
                     f"Mass: {mass:.3f} kg\n"
                     f"Cross-sectional Area: {area:.6f} m²\n"
                     f"Drag Coefficient: {drag_coeff:.3f}\n"
@@ -1252,6 +1245,7 @@ class TerminalVelocityTool(ScienceHubTool):
 
         elif display_mode == "detailed":
             info = ("Detailed Physics Analysis:\n\n"
+                    "Drag coefficients are approximate and assume steady, subsonic flow with fixed orientation.\n\n"
                     f"Object Properties:\n"
                     f"  Mass: {mass:.3f} kg\n"
                     f"  Cross-sectional Area: {area:.6f} m²\n"
@@ -1270,6 +1264,7 @@ class TerminalVelocityTool(ScienceHubTool):
 
         elif display_mode == "reynolds":
             info = ("Reynolds Number Analysis:\n\n"
+                    "Drag coefficients are approximate and assume steady, subsonic flow with fixed orientation.\n\n"
                     f"Terminal Velocity: {v_t:.2f} m/s\n"
                     f"Characteristic Length: {characteristic_length:.6f} m\n"
                     f"Fluid Density: {density:.3f} kg/m³\n"
