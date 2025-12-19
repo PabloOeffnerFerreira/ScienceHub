@@ -1,15 +1,15 @@
 """
-Bohr Model Viewer - Interactive Atomic Structure Visualization
+Atom Viewer - Interactive Atomic Structure Visualization
 ===========================================================
 
-A comprehensive tool for visualizing Bohr atomic models with 2D and 3D views,
+A comprehensive tool for visualizing atomic structures with 2D and 3D views,
 complete atomic data display, and quantum mechanics integration capabilities.
 
 Features:
 - Interactive atom selection from periodic table
 - Complete atomic data display (properties, electron configuration, etc.)
-- 2D Bohr model visualization with electron orbits
-- 3D Bohr model visualization with orbital representation
+- 2D atomic model visualization with electron orbits
+- 3D atomic model visualization with orbital representation
 - Real-time parameter adjustment
 - Quantum model integration framework
 - Beautiful, modern UI design
@@ -28,6 +28,9 @@ from mpl_toolkits.mplot3d import Axes3D
 import matplotlib.patches as patches
 from matplotlib.patches import Circle, Arc
 from matplotlib.collections import PatchCollection
+from scipy.special import sph_harm, genlaguerre, factorial
+from scipy.integrate import quad
+import cmath
 
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QGridLayout, QLabel, QComboBox,
@@ -174,6 +177,280 @@ class BohrModelCalculator:
                 if subshell['electrons'] > 0:
                     parts.append(f"{subshell['name']}{subshell['electrons']}")
         return ' '.join(parts)
+
+
+class HydrogenLikeOrbitalCalculator:
+    """Hydrogen-like atomic orbitals using effective nuclear charge."""
+
+    def __init__(self):
+        self.constants = PhysicsConstants()
+        self.a0 = self.constants.BOHR_RADIUS  # Bohr radius
+
+    def radial_wavefunction(self, n: int, l: int, r: float, Z: int = 1) -> float:
+        """
+        Calculate the radial wavefunction R_nl(r) for hydrogen-like atoms.
+
+        Parameters:
+        n: Principal quantum number
+        l: Azimuthal quantum number
+        r: Radial distance (in units of a0)
+        Z: Atomic number
+
+        Returns:
+        Radial wavefunction value
+        """
+        rho = 2 * Z * r / (n * self.a0)
+
+        # Associated Laguerre polynomial
+        laguerre = genlaguerre(n - l - 1, 2 * l + 1)
+        L = laguerre(rho)
+
+        # Normalization factor
+        norm_factor = np.sqrt((2 * Z / (n * self.a0))**3 *
+                             factorial(n - l - 1) / (2 * n * factorial(n + l)))
+
+        # Radial wavefunction
+        R = norm_factor * np.exp(-rho / 2) * rho**l * L
+
+        return float(R)
+
+    def angular_wavefunction(self, l: int, m: int, theta: float, phi: float) -> complex:
+        """
+        Calculate the angular wavefunction Y_lm(theta, phi).
+
+        Parameters:
+        l: Azimuthal quantum number
+        m: Magnetic quantum number
+        theta: Polar angle
+        phi: Azimuthal angle
+
+        Returns:
+        Angular wavefunction value (complex)
+        """
+        # Spherical harmonics
+        Y_lm = sph_harm(m, l, phi, theta)
+        return complex(Y_lm)
+
+    def wavefunction(self, n: int, l: int, m: int, r: float, theta: float, phi: float, Z: int = 1) -> complex:
+        """
+        Calculate the complete wavefunction ψ_nlm(r, θ, φ).
+
+        Parameters:
+        n, l, m: Quantum numbers
+        r, theta, phi: Spherical coordinates
+        Z: Atomic number
+
+        Returns:
+        Complete wavefunction value
+        """
+        R = self.radial_wavefunction(n, l, r, Z)
+        Y = self.angular_wavefunction(l, m, theta, phi)
+        return R * Y
+
+    def probability_density(self, n: int, l: int, m: int, r: float, theta: float, phi: float, Z: int = 1) -> float:
+        """
+        Calculate the probability density |ψ|².
+
+        Returns:
+        Probability density
+        """
+        psi = self.wavefunction(n, l, m, r, theta, phi, Z)
+        return abs(psi)**2
+
+    def radial_probability_density(self, n: int, l: int, r: float, Z: int = 1) -> float:
+        """
+        Calculate the radial probability density P(r) = r²|R_nl(r)|².
+
+        Returns:
+        Radial probability density
+        """
+        R = self.radial_wavefunction(n, l, r, Z)
+        return r**2 * abs(R)**2
+
+    def energy_level(self, n: int, Z: int = 1) -> float:
+        """
+        Calculate the energy level for quantum state (n).
+
+        Returns:
+        Energy in eV
+        """
+        # E_n = -13.6 * Z² / n² eV
+        return -13.6 * (Z ** 2) / (n ** 2)
+
+    def expectation_value_r(self, n: int, l: int, Z: int = 1) -> float:
+        """
+        Calculate the expectation value of r for state (n,l).
+
+        Returns:
+        <r> in units of a0
+        """
+        # <r> = (n² a0 / 2Z) * [3n² - l(l+1)]
+        return (n**2 * self.a0 / (2 * Z)) * (3 * n**2 - l * (l + 1))
+
+    def orbital_names(self) -> Dict[Tuple[int, int], str]:
+        """
+        Get orbital names for different (l, m) combinations.
+
+        Returns:
+        Dictionary mapping (l, m) to orbital names
+        """
+        orbital_names = {}
+        subshell_letters = ['s', 'p', 'd', 'f', 'g', 'h']
+
+        for l in range(6):
+            for m in range(-l, l + 1):
+                if l < len(subshell_letters):
+                    if m == 0:
+                        name = subshell_letters[l]
+                    elif m > 0:
+                        name = f"{subshell_letters[l]}{m}"
+                    else:
+                        name = f"{subshell_letters[l]}{-m}*"
+                    orbital_names[(l, m)] = name
+
+        return orbital_names
+
+    def get_quantum_states(self, max_n: int = 4) -> List[Tuple[int, int, int]]:
+        """
+        Get all valid quantum states up to max_n.
+
+        Returns:
+        List of (n, l, m) tuples
+        """
+        states = []
+        for n in range(1, max_n + 1):
+            for l in range(n):
+                for m in range(-l, l + 1):
+                    states.append((n, l, m))
+        return states
+
+    def calculate_orbital_data(
+        self,
+        n: int,
+        l: int,
+        m: int,
+        Z: float = 1.0,
+        resolution: int = 50
+    ) -> Dict[str, Any]:
+        """
+        Calculate hydrogen-like orbital data for visualization.
+
+        This implementation:
+        • is fully vectorized
+        • preserves angular structure (lobes, nodes)
+        • separates radial and angular components
+        • supports Z_eff transparently
+
+        Returns fields suitable for both
+        - textbook orbital shapes
+        - probability-density plots
+        """
+
+        # -------------------------------
+        # Coordinate grids
+        # -------------------------------
+        r_max = 5.0 * n**2 * self.a0 / Z
+        r = np.linspace(0.01 * self.a0, r_max, resolution * 2)
+        theta = np.linspace(0.0, np.pi, resolution)
+        phi = np.linspace(0.0, 2.0 * np.pi, resolution)
+
+        R, Theta, Phi = np.meshgrid(r, theta, phi, indexing="ij")
+
+        # -------------------------------
+        # Angular wavefunction Y_l^m
+        # -------------------------------
+        Y_lm = sph_harm(m, l, Phi, Theta)
+
+        # -------------------------------
+        # Radial wavefunction R_nl(r)
+        # -------------------------------
+        rho = 2.0 * Z * R / (n * self.a0)
+
+        laguerre = genlaguerre(n - l - 1, 2 * l + 1)
+        L = laguerre(rho)
+
+        norm = np.sqrt(
+            (2 * Z / (n * self.a0)) ** 3
+            * factorial(n - l - 1)
+            / (2 * n * factorial(n + l))
+        )
+
+        R_nl = norm * np.exp(-rho / 2.0) * rho**l * L
+
+        # -------------------------------
+        # Full wavefunction ψ = R · Y
+        # -------------------------------
+        psi = R_nl * Y_lm
+
+        # -------------------------------
+        # Probability density
+        # -------------------------------
+        prob_density = np.abs(psi) ** 2
+        prob_density /= np.max(prob_density)
+
+        # -------------------------------
+        # Cartesian coordinates
+        # -------------------------------
+        X = R * np.sin(Theta) * np.cos(Phi)
+        Y = R * np.sin(Theta) * np.sin(Phi)
+        Zc = R * np.cos(Theta)
+
+        # -------------------------------
+        # Return structured data
+        # -------------------------------
+        return {
+            "quantum_numbers": (n, l, m),
+            "energy": self.energy_level(n, Z),
+
+            # geometry
+            "X": X,
+            "Y": Y,
+            "Z": Zc,
+
+            # full fields
+            "psi": psi,
+            "probability_density": prob_density,
+
+            # separated components (IMPORTANT)
+            "radial_part": R_nl,
+            "angular_complex": Y_lm,
+            "angular_real": np.real(Y_lm),
+            "angular_abs": np.abs(Y_lm),
+
+            # metadata
+            "radial_coords": r,
+            "angular_coords": (theta, phi),
+            "expectation_r": self.expectation_value_r(n, l, Z),
+        }
+
+
+class EffectiveNuclearCharge:
+    """Compute Z_eff using Slater's rules."""
+
+    @staticmethod
+    def compute_Z_eff(Z: int, n: int, l: int, config: Dict) -> float:
+        S = 0.0
+
+        for shell in config["shells"]:
+            n_shell = shell["n"]
+            for subshell in shell["subshells"]:
+                electrons = subshell["electrons"]
+                l_shell = subshell["l"]
+
+                if n_shell > n:
+                    continue
+
+                if n_shell == n:
+                    if l == 0:
+                        S += 0.30 * max(0, electrons - 1)
+                    else:
+                        S += 0.35 * max(0, electrons - 1)
+                elif n_shell == n - 1:
+                    S += 0.85 * electrons
+                else:
+                    S += 1.00 * electrons
+
+        return max(1.0, Z - S)
 
 
 class BohrModel2DCanvas(FigureCanvasQTAgg):
@@ -596,6 +873,342 @@ class BohrModel3DCanvas(FigureCanvasQTAgg):
 
         self.draw()
 
+class QuantumOrbitalCanvas(FigureCanvasQTAgg):
+    """3D Canvas for quantum orbital visualization."""
+
+    def __init__(self, parent=None, width=8, height=6, dpi=100):
+        self.figure = Figure(figsize=(width, height), dpi=dpi, facecolor='#0a0a0a')
+        self.axes = self.figure.add_subplot(111, projection='3d')
+
+        super().__init__(self.figure)
+        self.setParent(parent)
+
+        # Initialize data
+        self.orbital_data = {}
+        self.show_probability = True
+        self.show_phase = False
+        self.opacity = 0.3
+        self.isosurface_level = 0.1
+        self.view_angle = [30, 45]  # elevation, azimuth
+
+        self.setup_plot()
+
+    def setup_plot(self):
+        """Initialize the 3D quantum orbital plot."""
+        self.axes.clear()
+        self.axes.set_facecolor('#0a0a0a')
+
+        # Set pane colors
+        self.axes.xaxis.pane.fill = False
+        self.axes.yaxis.pane.fill = False
+        self.axes.zaxis.pane.fill = False
+        self.axes.xaxis.pane.set_edgecolor('#333333')
+        self.axes.yaxis.pane.set_edgecolor('#333333')
+        self.axes.zaxis.pane.set_edgecolor('#333333')
+
+        # Set labels
+        self.axes.set_xlabel('X (a₀)', color='white', fontsize=10)
+        self.axes.set_ylabel('Y (a₀)', color='white', fontsize=10)
+        self.axes.set_zlabel('Z (a₀)', color='white', fontsize=10)
+
+        # Set tick colors
+        self.axes.tick_params(colors='white')
+
+        # Set title
+        self.axes.set_title('Quantum Orbital - 3D Probability Density',
+                          color='white', fontsize=14, fontweight='bold', pad=20)
+
+        # Set initial view
+        self.axes.view_init(elev=self.view_angle[0], azim=self.view_angle[1])
+
+        # Set equal aspect
+        self.axes.set_box_aspect([1, 1, 1])
+
+    def update_orbital(self, orbital_data: Dict):
+        """Update the orbital being displayed."""
+        self.orbital_data = orbital_data
+        self.redraw()
+
+    def draw_quantum_orbital(self):
+        """Draw the quantum orbital probability density."""
+        if not self.orbital_data:
+            return
+
+        X = self.orbital_data['X']
+        Y = self.orbital_data['Y']
+        Z = self.orbital_data['Z']
+        r = self.orbital_data['radial_coords']
+        theta, phi = self.orbital_data['angular_coords']
+
+        n, l, m = self.orbital_data['quantum_numbers']
+
+        if l == 0:
+            # s orbitals → probability density
+            data = self.orbital_data['probability_density']
+            mode = "density"
+            title = "Probability Density |ψ|²"
+        else:
+            # p, d, f orbitals → signed wavefunction
+            if l == 0:
+                data = self.orbital_data['probability_density']
+                mode = "density"
+                title = "Probability Density |ψ|²"
+            else:
+                # PURE ANGULAR SHAPE (this is the key)
+                angular = self.orbital_data["angular_real"]
+                radial = self.orbital_data["radial_part"]
+
+                # weak radial envelope to localize shape
+                data = angular * np.exp(-radial / np.max(radial))
+
+                mode = "angular"
+                title = "Angular Wavefunction (orbital shape)"
+
+            mode = "wavefunction"
+            title = "Wavefunction ψ (signed)"   
+
+
+        # Ensure isosurface level is within data range
+        if mode == "density":
+            level = self.isosurface_level
+        else:
+            max_amp = np.max(np.abs(data))
+            level = 0.2
+
+
+        # --- Optimized isosurface rendering ---
+        try:
+            from skimage import measure
+
+            # 1. Downsample data for marching cubes (huge speedup)
+            step = max(1, data.shape[0] // 40)
+            data_ds = data[::step, ::step, ::step]
+
+            rv_step = r[1] - r[0]
+            th_step = theta[1] - theta[0]
+            ph_step = phi[1] - phi[0]
+
+            def render_surface(surface_data, level, color):
+                verts, faces, _, _ = measure.marching_cubes(surface_data, level=level)
+                verts = verts * step
+
+                rv = r[0] + verts[:, 0] * rv_step
+                thetav = theta[0] + verts[:, 1] * th_step
+                phiv = phi[0] + verts[:, 2] * ph_step
+
+                xv = rv * np.sin(thetav) * np.cos(phiv)
+                yv = rv * np.sin(thetav) * np.sin(phiv)
+                zv = rv * np.cos(thetav)
+
+                self.axes.plot_trisurf(
+                    xv, yv, faces, zv,
+                    color=color,
+                    alpha=self.opacity,
+                    linewidth=0,
+                    antialiased=False
+                )
+
+            if mode == "density":
+                render_surface(data_ds, level, "cyan")
+            else:
+                # positive lobe
+                render_surface(data_ds, +level, "red")
+                # negative lobe
+                render_surface(data_ds, -level, "blue")
+
+        except Exception as e:
+            # --- Fast fallback: stochastic point cloud ---
+            print(f"Isosurface fallback: {e}")
+
+            # Select high-probability region
+            thresh = np.percentile(data, 97)
+            idx = np.argwhere(data > thresh)
+
+            # Cap number of points (critical)
+            max_points = 8000
+            if len(idx) > max_points:
+                idx = idx[np.random.choice(len(idx), max_points, replace=False)]
+
+            self.axes.scatter(
+                X[tuple(idx.T)],
+                Y[tuple(idx.T)],
+                Z[tuple(idx.T)],
+                c=data[tuple(idx.T)],
+                cmap='viridis',
+                alpha=self.opacity,
+                s=2
+            )
+
+        # ---- Title (single source of truth) ----
+        n, l, m = self.orbital_data['quantum_numbers']
+        Z_eff = self.orbital_data.get("Z_eff", None)
+        element = self.orbital_data.get("element", {})
+
+        symbol = element.get("symbol", "")
+
+        title_lines = [
+            f"{symbol} n={n}, l={l}, m={m}",
+            title
+        ]
+
+        if Z_eff is not None:
+            title_lines.append(f"Hydrogen-like approximation (Z_eff ≈ {Z_eff:.2f})")
+
+        self.axes.set_title(
+            "\n".join(title_lines),
+            color="white",
+            fontsize=12,
+            fontweight="bold"
+        )
+
+    def set_visualization_mode(self, show_probability: bool, show_phase: bool):
+        """Set visualization mode."""
+        self.show_probability = show_probability
+        self.show_phase = show_phase
+        self.redraw()
+
+    def set_opacity(self, opacity: float):
+        """Set isosurface opacity."""
+        self.opacity = opacity
+        self.redraw()
+
+    def set_isosurface_level(self, level: float):
+        """Set isosurface level."""
+        self.isosurface_level = level
+        self.redraw()
+
+    def set_view_angle(self, elev: float, azim: float):
+        """Set camera view angle."""
+        self.view_angle = [elev, azim]
+        self.axes.view_init(elev=elev, azim=azim)
+        self.redraw()
+
+    def redraw(self):
+        """Redraw the entire quantum orbital visualization."""
+        self.setup_plot()
+
+        if self.orbital_data:
+            self.draw_quantum_orbital()
+
+        self.draw()
+
+
+class RadialWavefunctionCanvas(FigureCanvasQTAgg):
+    """Canvas for radial wavefunction and probability plots."""
+
+    def __init__(self, parent=None, width=8, height=6, dpi=100):
+        self.figure = Figure(figsize=(width, height), dpi=dpi, facecolor='#0a0a0a')
+        self.axes = self.figure.add_subplot(111)
+
+        super().__init__(self.figure)
+        self.setParent(parent)
+
+        # Initialize data
+        self.wavefunction_data = {}
+        self.show_radial_wavefunction = True
+        self.show_radial_probability = True
+
+        self.setup_plot()
+
+    def setup_plot(self):
+        """Initialize the radial plot."""
+        self.axes.clear()
+        self.axes.set_facecolor('#0a0a0a')
+        self.axes.grid(True, alpha=0.3)
+
+        # Set labels
+        self.axes.set_xlabel('r (a₀)', color='white', fontsize=12)
+        self.axes.set_ylabel('Amplitude / Probability', color='white', fontsize=12)
+
+        # Set tick colors
+        self.axes.tick_params(colors='white')
+
+        # Set title
+        self.axes.set_title('Radial Wavefunction and Probability Density',
+                          color='white', fontsize=14, fontweight='bold', pad=20)
+
+    def update_wavefunction(self, n: int, l: int, Z: int = 1):
+        """Update the wavefunction being displayed."""
+        calculator = HydrogenLikeOrbitalCalculator()
+        a0 = PhysicsConstants.BOHR_RADIUS
+        r_ao = np.linspace(0.001, 10 * n**2 / Z, 1000)
+        r = r_ao * a0  # convert to meters
+
+        R_nl = np.array([
+            calculator.radial_wavefunction(n, l, ri, Z)
+            for ri in r
+        ])
+
+        P_nl = np.array([
+            calculator.radial_probability_density(n, l, ri, Z)
+            for ri in r
+        ])
+
+        self.wavefunction_data = {
+            'r': r_ao,
+            'R_nl': R_nl,
+            'P_nl': P_nl,
+            'n': n,
+            'l': l,
+            'Z': Z
+        }
+        self.redraw()
+
+    def draw_radial_plots(self):
+        """Draw radial wavefunction and probability plots."""
+        if not self.wavefunction_data:
+            return
+
+        r = self.wavefunction_data['r']
+        R_nl = self.wavefunction_data['R_nl']
+        P_nl = self.wavefunction_data['P_nl']
+        n, l = self.wavefunction_data['n'], self.wavefunction_data['l']
+
+        # Plot radial wavefunction
+        if self.show_radial_wavefunction:
+            self.axes.plot(r, R_nl, 'b-', linewidth=2, label=f'R_{n}{l}(r)', alpha=0.8)
+            self.axes.plot(self.wavefunction_data['r'], R_nl, label=f"R_{n}{l}(r)")
+
+        # Plot radial probability density
+        if self.show_radial_probability:
+            ax2 = self.axes.twinx()
+            ax2.plot(r, P_nl, 'r-', linewidth=2, label=f'P_{n}{l}(r)', alpha=0.8)
+            ax2.set_ylabel('Radial Probability Density', color='red', fontsize=12)
+            ax2.tick_params(axis='y', labelcolor='red')
+
+        # Add expectation value line
+        calculator = HydrogenLikeOrbitalCalculator()
+        expectation_r = calculator.expectation_value_r(n, l, self.wavefunction_data['Z'])
+        self.axes.axvline(x=expectation_r, color='green', linestyle='--', alpha=0.7,
+                         label=f'<r> = {expectation_r:.2f} a₀')
+
+        # Add legend
+        lines1, labels1 = self.axes.get_legend_handles_labels()
+        if self.show_radial_probability:
+            lines2, labels2 = ax2.get_legend_handles_labels()
+            self.axes.legend(lines1 + lines2, labels1 + labels2, loc='upper right')
+        else:
+            self.axes.legend(lines1, labels1, loc='upper right')
+
+        # Update title
+        self.axes.set_title(f'Radial Functions for n={n}, l={l}',
+                          color='white', fontsize=12, fontweight='bold')
+
+    def set_display_options(self, show_wavefunction: bool, show_probability: bool):
+        """Set display options."""
+        self.show_radial_wavefunction = show_wavefunction
+        self.show_radial_probability = show_probability
+        self.redraw()
+
+    def redraw(self):
+        """Redraw the radial plots."""
+        self.setup_plot()
+
+        if self.wavefunction_data:
+            self.draw_radial_plots()
+
+        self.draw()
+
 
 class BohrModelViewer(ScienceHubTool):
     """Comprehensive Bohr Model Viewer with 2D/3D visualization and atomic data."""
@@ -605,6 +1218,7 @@ class BohrModelViewer(ScienceHubTool):
 
         # Initialize calculators and data
         self.calculator = BohrModelCalculator()
+        self.quantum_calculator = HydrogenLikeOrbitalCalculator()
         self.constants = PhysicsConstants()
 
         # Load periodic table data
@@ -616,6 +1230,8 @@ class BohrModelViewer(ScienceHubTool):
 
         self.canvas_2d = None
         self.canvas_3d = None
+        self.quantum_canvas = None
+        self.radial_canvas = None
 
         # Setup UI
         self.setup_ui()
@@ -640,11 +1256,9 @@ class BohrModelViewer(ScienceHubTool):
 
     def setup_ui(self):
         """Setup the main user interface."""
-        # Create main layout
-        main_layout = self.layout()
-        if main_layout is None: 
-            main_layout = QHBoxLayout()
-            self.setLayout(main_layout)
+        # Create main layout with scroll area
+        main_widget = QWidget()
+        main_layout = QVBoxLayout(main_widget)
 
         # Create splitter for resizable panels
         splitter = QSplitter(Qt.Orientation.Horizontal)
@@ -660,6 +1274,20 @@ class BohrModelViewer(ScienceHubTool):
 
         # Set splitter proportions
         splitter.setSizes([400, 800])
+
+        # Create scroll area and set the main widget
+        scroll_area = QScrollArea()
+        scroll_area.setWidget(main_widget)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
+        # Set the scroll area as the main layout
+        layout = self.layout()
+        if layout is None:
+            layout = QVBoxLayout()
+            self.setLayout(layout)
+        layout.addWidget(scroll_area)
 
     def create_left_panel(self) -> QWidget:
         """Create the left control and data panel."""
@@ -699,6 +1327,62 @@ class BohrModelViewer(ScienceHubTool):
 
         layout.addWidget(element_group)
 
+        # Quantum Orbital Controls
+        quantum_group = QGroupBox("Quantum Orbital Controls")
+        quantum_group.setObjectName("toolCard")
+        quantum_layout = QVBoxLayout(quantum_group)
+        self.auto_orbital_checkbox = QCheckBox("Auto orbital (from electron configuration)")
+        self.auto_orbital_checkbox.setChecked(True)
+        self.auto_orbital_checkbox.stateChanged.connect(self.update_quantum_orbital)
+        quantum_layout.addWidget(self.auto_orbital_checkbox)
+
+        # Quantum number inputs
+        n_layout = QHBoxLayout()
+        n_layout.addWidget(QLabel("Principal (n):"))
+        self.n_spin = QSpinBox()
+        self.n_spin.setRange(1, 6)
+        self.n_spin.setValue(1)
+        self.n_spin.valueChanged.connect(self.on_quantum_numbers_changed)
+        n_layout.addWidget(self.n_spin)
+        quantum_layout.addLayout(n_layout)
+
+        l_layout = QHBoxLayout()
+        l_layout.addWidget(QLabel("Azimuthal (l):"))
+        self.l_spin = QSpinBox()
+        self.l_spin.setRange(0, 5)
+        self.l_spin.setValue(0)
+        self.l_spin.valueChanged.connect(self.on_quantum_numbers_changed)
+        l_layout.addWidget(self.l_spin)
+        quantum_layout.addLayout(l_layout)
+
+        m_layout = QHBoxLayout()
+        m_layout.addWidget(QLabel("Magnetic (m):"))
+        self.m_spin = QSpinBox()
+        self.m_spin.setRange(-5, 5)
+        self.m_spin.setValue(0)
+        self.m_spin.valueChanged.connect(self.on_quantum_numbers_changed)
+        m_layout.addWidget(self.m_spin)
+        quantum_layout.addLayout(m_layout)
+
+        # Orbital preset selector
+        preset_layout = QHBoxLayout()
+        preset_layout.addWidget(QLabel("Orbital Preset:"))
+        self.orbital_preset = QComboBox()
+        self.orbital_preset.addItem("1s (Ground state)", (1, 0, 0))
+        self.orbital_preset.addItem("2s", (2, 0, 0))
+        self.orbital_preset.addItem("2p (m=0)", (2, 1, 0))
+        self.orbital_preset.addItem("2p (m=±1)", (2, 1, 1))
+        self.orbital_preset.addItem("3s", (3, 0, 0))
+        self.orbital_preset.addItem("3p (m=0)", (3, 1, 0))
+        self.orbital_preset.addItem("3d (m=0)", (3, 2, 0))
+        self.orbital_preset.addItem("3d (m=±1)", (3, 2, 1))
+        self.orbital_preset.addItem("3d (m=±2)", (3, 2, 2))
+        self.orbital_preset.currentIndexChanged.connect(self.on_orbital_preset_changed)
+        preset_layout.addWidget(self.orbital_preset)
+        quantum_layout.addLayout(preset_layout)
+
+        layout.addWidget(quantum_group)
+
         # Atomic Data Display
         data_tabs = QTabWidget()
 
@@ -717,6 +1401,10 @@ class BohrModelViewer(ScienceHubTool):
         # Bohr Model Parameters
         bohr_tab = self.create_bohr_parameters_tab()
         data_tabs.addTab(bohr_tab, "Bohr Parameters")
+
+        # Schrödinger Model
+        schrodinger_tab = self.create_schrodinger_tab()
+        data_tabs.addTab(schrodinger_tab, "Schrödinger Model")
 
         layout.addWidget(data_tabs)
 
@@ -745,6 +1433,27 @@ class BohrModelViewer(ScienceHubTool):
         self.show_3d_orbitals.stateChanged.connect(self.update_3d_visualization)
         vis_layout.addWidget(self.show_3d_orbitals)
 
+        # Quantum Orbital Controls
+        self.show_probability_density = QCheckBox("Show probability density")
+        self.show_probability_density.setChecked(True)
+        self.show_probability_density.stateChanged.connect(self.update_quantum_visualization)
+        vis_layout.addWidget(self.show_probability_density)
+
+        self.show_wavefunction_phase = QCheckBox("Show wavefunction phase")
+        self.show_wavefunction_phase.stateChanged.connect(self.update_quantum_visualization)
+        vis_layout.addWidget(self.show_wavefunction_phase)
+
+        # Radial plot controls
+        self.show_radial_wavefunction = QCheckBox("Show radial wavefunction")
+        self.show_radial_wavefunction.setChecked(True)
+        self.show_radial_wavefunction.stateChanged.connect(self.update_radial_visualization)
+        vis_layout.addWidget(self.show_radial_wavefunction)
+
+        self.show_radial_probability = QCheckBox("Show radial probability")
+        self.show_radial_probability.setChecked(True)
+        self.show_radial_probability.stateChanged.connect(self.update_radial_visualization)
+        vis_layout.addWidget(self.show_radial_probability)
+
         # Animation controls
         anim_layout = QHBoxLayout()
         self.animate_2d_btn = QPushButton("Animate 2D")
@@ -756,6 +1465,11 @@ class BohrModelViewer(ScienceHubTool):
         self.animate_3d_btn.setCheckable(True)
         self.animate_3d_btn.clicked.connect(self.toggle_3d_animation)
         anim_layout.addWidget(self.animate_3d_btn)
+
+        self.animate_quantum_btn = QPushButton("Animate Quantum")
+        self.animate_quantum_btn.setCheckable(True)
+        self.animate_quantum_btn.clicked.connect(self.toggle_quantum_animation)
+        anim_layout.addWidget(self.animate_quantum_btn)
         vis_layout.addLayout(anim_layout)
 
         layout.addWidget(vis_group)
@@ -866,6 +1580,61 @@ Limitations:
 
         return widget
 
+    def create_schrodinger_tab(self) -> QWidget:
+        """Create Schrödinger model tab."""
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+
+        # Schrödinger explanation
+        schrodinger_info = QLabel("""
+The Schrödinger equation describes electrons as quantum mechanical waves.
+Key concepts:
+
+• Wavefunction ψ(r,θ,φ): Probability amplitude
+• Probability density |ψ|²: Electron location probability
+• Radial wavefunction R_nl(r): Radial dependence
+• Angular wavefunction Y_lm(θ,φ): Angular dependence
+• Quantum numbers: n (energy), l (shape), m (orientation)
+
+The complete wavefunction: ψ_nlm(r,θ,φ) = R_nl(r) × Y_lm(θ,φ)
+
+This model correctly predicts atomic spectra and electron distributions.
+        """)
+        schrodinger_info.setWordWrap(True)
+        layout.addWidget(schrodinger_info)
+
+        # Quantum orbital data table
+        self.schrodinger_table = QTableWidget()
+        self.schrodinger_table.setColumnCount(4)
+        self.schrodinger_table.setHorizontalHeaderLabels(["Quantum State", "Energy (eV)", "<r> (a₀)", "Orbital Type"])
+        layout.addWidget(self.schrodinger_table)
+
+        # Orbital isosurface controls
+        iso_layout = QHBoxLayout()
+        iso_layout.addWidget(QLabel("Isosurface Level:"))
+        self.iso_slider = QSlider(Qt.Orientation.Horizontal)
+        self.iso_slider.setRange(1, 50)
+        self.iso_slider.setValue(10)
+        self.iso_slider.valueChanged.connect(self.on_iso_level_changed)
+        iso_layout.addWidget(self.iso_slider)
+        self.iso_label = QLabel("0.10")
+        iso_layout.addWidget(self.iso_label)
+        layout.addLayout(iso_layout)
+
+        # Opacity control
+        opacity_layout = QHBoxLayout()
+        opacity_layout.addWidget(QLabel("Opacity:"))
+        self.opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        self.opacity_slider.setRange(1, 100)
+        self.opacity_slider.setValue(30)
+        self.opacity_slider.valueChanged.connect(self.on_opacity_changed)
+        opacity_layout.addWidget(self.opacity_slider)
+        self.opacity_label = QLabel("0.30")
+        opacity_layout.addWidget(self.opacity_label)
+        layout.addLayout(opacity_layout)
+
+        return widget
+
     def create_right_panel(self) -> QWidget:
         """Create the right visualization panel."""
         panel = QWidget()
@@ -874,13 +1643,21 @@ Limitations:
         # Visualization tabs
         vis_tabs = QTabWidget()
 
-        # 2D View
+        # 2D Bohr Model
         self.canvas_2d = BohrModel2DCanvas(self)
         vis_tabs.addTab(self.canvas_2d, "2D Bohr Model")
 
-        # 3D View
+        # 3D Bohr Model
         self.canvas_3d = BohrModel3DCanvas(self)
         vis_tabs.addTab(self.canvas_3d, "3D Bohr Model")
+
+        # Quantum Orbital 3D
+        self.quantum_canvas = QuantumOrbitalCanvas(self)
+        vis_tabs.addTab(self.quantum_canvas, "Quantum Orbital 3D")
+
+        # Radial Wavefunctions
+        self.radial_canvas = RadialWavefunctionCanvas(self)
+        vis_tabs.addTab(self.radial_canvas, "Radial Functions")
 
         layout.addWidget(vis_tabs)
 
@@ -979,6 +1756,7 @@ Limitations:
         self.update_electron_config()
         self.update_quantum_properties()
         self.update_bohr_parameters()
+        self.update_schrodinger_data()
 
         # Update visualizations
         if self.canvas_2d is not None:
@@ -986,6 +1764,10 @@ Limitations:
 
         if self.canvas_3d is not None:
             self.canvas_3d.update_atom(element, self.current_config)
+
+        # Update quantum visualizations
+        self.update_quantum_orbital()
+        self.update_radial_wavefunction()
 
     def update_basic_properties(self):
         """Update basic properties table."""
@@ -1099,6 +1881,163 @@ Shell Structure:
 
         self.bohr_table.resizeColumnsToContents()
 
+    def update_schrodinger_data(self):
+        """Update Schrödinger model data."""
+        if not self.current_element:
+            return
+
+        atomic_number = self.current_element.get('number', 1)
+
+        # Get quantum states for this element
+        states = self.quantum_calculator.get_quantum_states(max_n=4)
+        orbital_names = self.quantum_calculator.orbital_names()
+
+        schrodinger_data = []
+        for n, l, m in states:
+            if n**2 >= atomic_number:  # Only show states that would be occupied
+                continue
+
+            energy = self.quantum_calculator.energy_level(n, atomic_number)
+            expectation_r = self.quantum_calculator.expectation_value_r(n, l, atomic_number)
+            orbital_name = orbital_names.get((l, m), f"{n}{'spdf'[l] if l < 4 else str(l)}{abs(m) if m != 0 else ''}")
+
+            schrodinger_data.append((f"n={n}, l={l}, m={m}", energy, expectation_r, orbital_name))
+
+        self.schrodinger_table.setRowCount(len(schrodinger_data))
+        for i, (state, energy, exp_r, orbital) in enumerate(schrodinger_data):
+            self.schrodinger_table.setItem(i, 0, QTableWidgetItem(state))
+            self.schrodinger_table.setItem(i, 1, QTableWidgetItem(f"{energy:.2f}"))
+            self.schrodinger_table.setItem(i, 2, QTableWidgetItem(f"{exp_r:.2f}"))
+            self.schrodinger_table.setItem(i, 3, QTableWidgetItem(orbital))
+
+        self.schrodinger_table.resizeColumnsToContents()
+    def get_auto_orbital(self):
+        """
+        Determine (n, l, m) from the highest occupied subshell.
+        """
+        if not self.current_config:
+            return 1, 0, 0
+
+        shells = self.current_config["shells"]
+
+        # Find highest n with electrons
+        for shell in reversed(shells):
+            for subshell in reversed(shell["subshells"]):
+                if subshell["electrons"] > 0:
+                    n = shell["n"]
+                    l = subshell["l"]
+                    m = 0  # default orientation
+                    return n, l, m
+
+        return 1, 0, 0
+    
+    def update_quantum_orbital(self):
+        if self.auto_orbital_checkbox.isChecked():
+            n, l, m = self.get_auto_orbital()
+
+            # Sync UI (without triggering loops)
+            self.n_spin.blockSignals(True)
+            self.l_spin.blockSignals(True)
+            self.m_spin.blockSignals(True)
+
+            self.n_spin.setValue(n)
+            self.l_spin.setValue(l)
+            self.m_spin.setValue(m)
+
+            self.n_spin.blockSignals(False)
+            self.l_spin.blockSignals(False)
+            self.m_spin.blockSignals(False)
+        else:
+            n = self.n_spin.value()
+            l = self.l_spin.value()
+            m = self.m_spin.value()
+
+        # --- validation ---
+        if l >= n or abs(m) > l:
+            return
+
+        Z = self.current_element.get("number", 1)
+        Z_eff = EffectiveNuclearCharge.compute_Z_eff(Z, n, l, self.current_config)
+
+        orbital_data = self.quantum_calculator.calculate_orbital_data(
+            n, l, m, Z_eff, resolution=30
+        )
+
+        orbital_data["Z_eff"] = Z_eff
+        orbital_data["element"] = self.current_element
+
+        if self.quantum_canvas:
+            self.quantum_canvas.update_orbital(orbital_data)
+
+            if self.quantum_canvas:
+                self.quantum_canvas.update_orbital(orbital_data)
+
+    def update_radial_wavefunction(self):
+        if self.auto_orbital_checkbox.isChecked():
+            n, l, _ = self.get_auto_orbital()
+        else:
+            n = self.n_spin.value()
+            l = self.l_spin.value()
+
+        Z = self.current_element.get("number", 1)
+
+        if self.radial_canvas:
+            self.radial_canvas.update_wavefunction(n, l, Z)
+
+    def on_quantum_numbers_changed(self):
+        """Handle quantum number changes."""
+        # Validate l and m ranges
+        n = self.n_spin.value()
+        l = self.l_spin.value()
+        m = self.m_spin.value()
+
+        # Adjust l if necessary
+        if l >= n:
+            self.l_spin.blockSignals(True)
+            self.l_spin.setValue(n - 1)
+            self.l_spin.blockSignals(False)
+            l = n - 1
+
+        # Adjust m if necessary
+        if abs(m) > l:
+            self.m_spin.blockSignals(True)
+            self.m_spin.setValue(0)
+            self.m_spin.blockSignals(False)
+            m = 0
+
+        self.update_quantum_orbital()
+        self.update_radial_wavefunction()
+
+    def on_orbital_preset_changed(self, index: int):
+        if index < 0:
+            return
+
+        n, l, m = self.orbital_preset.itemData(index)
+
+        # Turn OFF auto mode
+        self.auto_orbital_checkbox.setChecked(False)
+
+        self.n_spin.setValue(n)
+        self.l_spin.setValue(l)
+        self.m_spin.setValue(m)
+
+        self.update_quantum_orbital()
+
+
+    def on_iso_level_changed(self, value: int):
+        """Handle isosurface level change."""
+        level = value / 100.0
+        self.iso_label.setText(f"{level:.2f}")
+        if self.quantum_canvas:
+            self.quantum_canvas.set_isosurface_level(level)
+
+    def on_opacity_changed(self, value: int):
+        """Handle opacity change."""
+        opacity = value / 100.0
+        self.opacity_label.setText(f"{opacity:.2f}")
+        if self.quantum_canvas:
+            self.quantum_canvas.set_opacity(opacity)
+
     def update_2d_visualization(self):
         """Update 2D visualization settings."""
         self.canvas_2d.show_quantum_numbers = self.show_2d_quantum.isChecked()
@@ -1110,6 +2049,20 @@ Shell Structure:
         self.canvas_3d.show_quantum_numbers = self.show_3d_quantum.isChecked()
         self.canvas_3d.show_orbitals = self.show_3d_orbitals.isChecked()
         self.canvas_3d.redraw()
+
+    def update_quantum_visualization(self):
+        """Update quantum orbital visualization settings."""
+        show_prob = self.show_probability_density.isChecked()
+        show_phase = self.show_wavefunction_phase.isChecked()
+        if self.quantum_canvas:
+            self.quantum_canvas.set_visualization_mode(show_prob, show_phase)
+
+    def update_radial_visualization(self):
+        """Update radial wavefunction visualization settings."""
+        show_wave = self.show_radial_wavefunction.isChecked()
+        show_prob = self.show_radial_probability.isChecked()
+        if self.radial_canvas:
+            self.radial_canvas.set_display_options(show_wave, show_prob)
 
     def toggle_2d_animation(self):
         """Toggle 2D animation."""
@@ -1125,6 +2078,15 @@ Shell Structure:
         else:
             self.canvas_3d.stop_animation()
 
+    def toggle_quantum_animation(self):
+        """Toggle quantum orbital animation."""
+        if self.animate_quantum_btn.isChecked():
+            if self.quantum_canvas:
+                self.quantum_canvas.start_animation()
+        else:
+            if self.quantum_canvas:
+                self.quantum_canvas.stop_animation()
+
     def on_camera_changed(self):
         """Handle camera angle changes."""
         elev = self.elev_slider.value()
@@ -1133,7 +2095,10 @@ Shell Structure:
         self.elev_label.setText(f"{elev}°")
         self.azim_label.setText(f"{azim}°")
 
-        self.canvas_3d.set_view_angle(elev, azim)
+        if self.canvas_3d:
+            self.canvas_3d.set_view_angle(elev, azim)
+        if self.quantum_canvas:
+            self.quantum_canvas.set_view_angle(elev, azim)
 
     def reset_views(self):
         """Reset all views to default."""
@@ -1144,12 +2109,17 @@ Shell Structure:
         # Stop animations
         self.animate_2d_btn.setChecked(False)
         self.animate_3d_btn.setChecked(False)
+        self.animate_quantum_btn.setChecked(False)
         self.canvas_2d.stop_animation()
         self.canvas_3d.stop_animation()
+        if self.quantum_canvas:
+            self.quantum_canvas.stop_animation()
 
         # Reset visualizations
         self.canvas_2d.redraw()
         self.canvas_3d.redraw()
+        if self.quantum_canvas:
+            self.quantum_canvas.redraw()
 
     def export_2d_view(self):
         """Export 2D view as image."""
@@ -1166,6 +2136,24 @@ Shell Structure:
         )
         if filename:
             self.canvas_3d.figure.savefig(filename, dpi=300, bbox_inches='tight')
+
+    def export_quantum_view(self):
+        """Export quantum orbital view as image."""
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "Export Quantum View", "", "PNG Files (*.png);;PDF Files (*.pdf)"
+        )
+        if filename:
+            if self.quantum_canvas:
+                self.quantum_canvas.figure.savefig(filename, dpi=300, bbox_inches='tight')
+
+    def export_radial_view(self):
+        """Export radial functions view as image."""
+        filename, _ = QFileDialog.getSaveFileName(
+            self, "Export Radial View", "", "PNG Files (*.png);;PDF Files (*.pdf)"
+        )
+        if filename:
+            if self.radial_canvas:
+                self.radial_canvas.figure.savefig(filename, dpi=300, bbox_inches='tight')
 
     def export_atomic_data(self):
         """Export atomic data as JSON."""
@@ -1191,24 +2179,26 @@ Shell Structure:
         """Show about dialog."""
         QMessageBox.about(
             self, "About Bohr Model Viewer",
-            "Bohr Model Viewer v1.0\n\n"
-            "An interactive tool for visualizing atomic structure using the Bohr model.\n\n"
+            "Bohr Model Viewer v2.0\n\n"
+            "An interactive tool for visualizing atomic structure using the Bohr model\n"
+            "with full Schrödinger equation quantum orbital calculations.\n\n"
             "Features:\n"
             "• 2D and 3D atomic visualizations\n"
             "• Complete atomic data display\n"
             "• Electron configuration analysis\n"
-            "• Quantum mechanical properties\n"
+            "• Quantum mechanical calculations\n"
             "• Real-time parameter adjustment\n"
+            "• Quantum orbital probability densities\n"
+            "• Radial wavefunction plots\n"
             "• Export capabilities\n\n"
-            "Ready for quantum model integration."
+            "Includes both classical Bohr model and modern quantum mechanics."
         )
-
 
 TOOL_META = {
     "name": "Bohr Model Viewer",
     "description": "Interactive 2D/3D visualization of atomic structure using the Bohr model with complete atomic data display and quantum mechanics integration",
     "category": "Chemistry",
-    "version": "1.0.0",
+    "version": "2.0.0",
     "author": "ScienceHub Team",
     "features": [
         "Interactive atom selection from periodic table",
@@ -1222,10 +2212,20 @@ TOOL_META = {
         "Export functionality",
         "Quantum model integration framework",
         "Educational information panels",
-        "Beautiful modern UI design"
+        "Beautiful modern UI design",
+        "Schrödinger equation solver for hydrogen-like atoms",
+        "Quantum orbital probability density visualization",
+        "Radial wavefunction and probability plots",
+        "Interactive quantum number controls",
+        "Orbital shape analysis (s, p, d, f orbitals)",
+        "Wavefunction phase visualization",
+        "Expectation value calculations",
+        "Advanced 3D orbital rendering",
+        "Multiple visualization modes",
+        "Comprehensive quantum state analysis"
     ],
-    "educational_value": "Explore atomic structure, understand electron configuration, learn quantum numbers, and visualize the Bohr model interactively",
-    "keywords": ["bohr model", "atomic structure", "electron configuration", "quantum numbers", "periodic table", "3d visualization", "chemistry education"]
+    "educational_value": "Explore atomic structure, understand electron configuration, learn quantum numbers, visualize Bohr model vs quantum orbitals, master wave mechanics",
+    "keywords": ["bohr model", "atomic structure", "electron configuration", "quantum numbers", "periodic table", "3d visualization", "chemistry education", "schrödinger equation", "quantum orbitals", "wave functions", "probability density", "hydrogen atom"]
 }
 
 
