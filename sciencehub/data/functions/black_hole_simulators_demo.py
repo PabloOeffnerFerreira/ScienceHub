@@ -5,7 +5,7 @@ Demonstrates how to use the 2D, 3D, and integrated black hole simulators.
 
 # Example 1: Using the 2D Schwarzschild Simulator
 print("=== 2D Schwarzschild Black Hole Simulator ===")
-from sciencehub.domains.astronomy.schwarzschild_black_hole_simulator import (
+from sciencehub.data.functions.schwarzschild_black_hole_simulator import (
     SchwarzschildBlackHoleSimulator,
     TOOL_META
 )
@@ -16,7 +16,7 @@ print("Description:", TOOL_META['description'][:100] + "...")
 
 # Example 2: Using the 3D Simulator
 print("\n=== 3D Schwarzschild Black Hole Simulator ===")
-from sciencehub.domains.astronomy.schwarzschild_3d_simulator import (
+from sciencehub.data.functions.schwarzschild_3d_simulator import (
     Schwarzschild3DSimulator,
     TOOL_META_3D
 )
@@ -27,7 +27,7 @@ print("Description:", TOOL_META_3D['description'][:100] + "...")
 
 # Example 3: Using the Integrated Simulator
 print("\n=== Integrated Black Hole Simulator ===")
-from sciencehub.domains.astronomy.integrated_black_hole_simulator import (
+from sciencehub.domains.astronomy.black_hole_simulator import (
     IntegratedBlackHoleSimulator,
     launch_integrated_simulator
 )

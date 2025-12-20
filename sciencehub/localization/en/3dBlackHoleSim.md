@@ -149,8 +149,8 @@ Light rays follow null geodesics in curved spacetime. The simulator shows approx
 The 3D simulator is designed to work alongside the 2D Schwarzschild simulator:
 
 ```python
-from sciencehub.domains.astronomy.schwarzschild_black_hole_simulator import SchwarzschildBlackHoleSimulator
-from sciencehub.domains.astronomy.schwarzschild_3d_simulator import Schwarzschild3DSimulator
+from sciencehub.data.functions.schwarzschild_black_hole_simulator import SchwarzschildBlackHoleSimulator
+from sciencehub.data.functions.schwarzschild_3d_simulator import Schwarzschild3DSimulator
 
 # Create both simulators
 simulator_2d = SchwarzschildBlackHoleSimulator()

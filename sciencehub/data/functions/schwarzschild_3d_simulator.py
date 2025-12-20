@@ -23,7 +23,7 @@ from PyQt6.QtCore import *
 from PyQt6.QtGui import *
 
 from sciencehub.ui.components.tool_base import ScienceHubTool
-from sciencehub.domains.astronomy.schwarzschild_black_hole_simulator import (
+from sciencehub.data.functions.schwarzschild_black_hole_simulator import (
     SchwarzschildCalculator,
     PhysicsConstants
 )
@@ -48,8 +48,17 @@ class BlackHole3DCanvas(FigureCanvas):
         # Animation state
         self.animation_timer = None
         self.is_animating = False
+        self.draw_static_light_rays = True
         self.animation_angle = 0
         self.animation_speed = 2  # degrees per frame
+        self.zoom_factor = 1.0  # 1x default zoom
+        # Visibility toggles (set by parent tool)
+        self.show_event_horizon = True
+        self.show_photon_sphere = True
+        self.show_isco = True
+        self.show_light_rays = True
+        self.show_coordinate_grid = True
+        self.show_observer = True
 
         # Setup the plot
         self.setup_plot()
@@ -99,9 +108,10 @@ class BlackHole3DCanvas(FigureCanvas):
         if not self.black_hole_data:
             return
 
-        rs = self.black_hole_data['rs']
-        photon_sphere = self.black_hole_data['photon_sphere']
-        isco = self.black_hole_data['isco']
+        # Draw in Schwarzschild radius units (Rs = 1)
+        rs = 1.0
+        photon_sphere = 1.5
+        isco = 6.0
 
         # Create sphere coordinates (higher resolution for better visibility)
         u = np.linspace(0, 2 * np.pi, 30)
@@ -111,16 +121,25 @@ class BlackHole3DCanvas(FigureCanvas):
         z = np.outer(np.ones(np.size(u)), np.cos(v))
 
         # Event horizon (black sphere) - make it more visible
-        self.axes.plot_surface(rs * x, rs * y, rs * z,
-                             color='black', alpha=0.9, label='Event Horizon')
+        if self.show_event_horizon:
+            self.axes.plot_surface(rs * x, rs * y, rs * z,
+                                 color="#000000", edgecolor='#2b2b2b',
+                                 linewidth=0.8, alpha=0.95, shade=False,
+                                 antialiased=True, label='Event Horizon')
+            # Add an equatorial outline so the horizon is unmistakable
+            theta = np.linspace(0, 2 * np.pi, 120)
+            self.axes.plot(rs * np.cos(theta), rs * np.sin(theta), np.zeros_like(theta),
+                           color='#9aa3a5', alpha=0.8, linewidth=1.2)
 
         # Photon sphere (red wireframe) - more visible
-        self.axes.plot_wireframe(photon_sphere * x, photon_sphere * y, photon_sphere * z,
-                               color='#ff6b6b', alpha=0.8, linewidth=2, label='Photon Sphere')
+        if self.show_photon_sphere:
+            self.axes.plot_wireframe(photon_sphere * x, photon_sphere * y, photon_sphere * z,
+                                   color='#ff6b6b', alpha=0.8, linewidth=2, label='Photon Sphere')
 
         # ISCO (blue wireframe) - more visible
-        self.axes.plot_wireframe(isco * x, isco * y, isco * z,
-                               color='#4ecdc4', alpha=0.6, linewidth=2, label='ISCO')
+        if self.show_isco:
+            self.axes.plot_wireframe(isco * x, isco * y, isco * z,
+                                   color='#4ecdc4', alpha=0.6, linewidth=2, label='ISCO')
 
     def draw_light_rays(self, impact_parameters: List[float], rs: float):
         """Draw light ray trajectories showing gravitational bending."""
@@ -150,7 +169,7 @@ class BlackHole3DCanvas(FigureCanvas):
         # For null geodesics in Schwarzschild metric
 
         # Create trajectory points
-        num_points = 200
+        num_points = 120
         phi_max = 2 * np.pi  # Full circle for visualization
 
         # For visualization, create a trajectory that shows bending
@@ -165,19 +184,20 @@ class BlackHole3DCanvas(FigureCanvas):
         if b_rs > 1.5:  # Rays that don't get captured
             # Straight line approximation for distant rays
             r = b_rs / np.sin(phi + 0.1)  # Slight bending
-            r = np.clip(r, rs * 1.1, rs * 50)  # Limit range
+            r = np.clip(r, 1.1, 50.0)  # Limit range in Rs units
         else:
             # Rays that get captured or highly bent
-            r = rs * (1.5 + 0.5 * np.sin(phi * 2))
+            r = 1.5 + 0.5 * np.sin(phi * 2)
 
         # Convert to Cartesian coordinates
-        x = r * rs * np.cos(phi)
-        y = r * rs * np.sin(phi)
+        # Return in Rs units
+        x = r * np.cos(phi)
+        y = r * np.sin(phi)
 
         # Limit the trajectory to reasonable bounds
-        mask = (np.abs(x) < rs * 20) & (np.abs(y) < rs * 20)
-        x = x[mask][:100]  # Limit to 100 points
-        y = y[mask][:100]
+        mask = (np.abs(x) < 20) & (np.abs(y) < 20)
+        x = x[mask][:80]  # Limit to 80 points
+        y = y[mask][:80]
 
         if len(x) < 10:
             return None
@@ -188,21 +208,21 @@ class BlackHole3DCanvas(FigureCanvas):
         """Draw coordinate grid showing spacetime curvature."""
         # Radial lines
         for phi in np.linspace(0, 2*np.pi, 12):
-            r_vals = np.linspace(rs * 1.1, max_radius * rs, 50)
+            r_vals = np.linspace(1.1, max_radius, 50)
             x = r_vals * np.cos(phi)
             y = r_vals * np.sin(phi)
             z = np.zeros_like(x)
 
-            self.axes.plot(x/rs, y/rs, z/rs, color='#666666', alpha=0.3, linewidth=0.5)
+            self.axes.plot(x, y, z, color='#666666', alpha=0.3, linewidth=0.5)
 
         # Angular circles
-        for r in np.linspace(rs * 2, max_radius * rs, 8):
+        for r in np.linspace(2, max_radius, 8):
             phi = np.linspace(0, 2*np.pi, 50)
             x = r * np.cos(phi)
             y = r * np.sin(phi)
             z = np.zeros_like(x)
 
-            self.axes.plot(x/rs, y/rs, z/rs, color='#666666', alpha=0.3, linewidth=0.5)
+            self.axes.plot(x, y, z, color='#666666', alpha=0.3, linewidth=0.5)
 
     def draw_observer(self):
         """Draw observer position and field of view."""
@@ -224,7 +244,13 @@ class BlackHole3DCanvas(FigureCanvas):
         """Update camera view angle."""
         self.camera_angle = [elev, azim]
         self.axes.view_init(elev=elev, azim=azim)
-        self.draw()
+        self.draw_idle()
+
+    def set_zoom(self, zoom_factor: float):
+        """Set zoom factor for the 3D view."""
+        self.zoom_factor = max(0.2, float(zoom_factor))
+        self._set_equal_limits()
+        self.draw_idle()
 
     def clear_plot(self):
         """Clear all plot elements."""
@@ -238,12 +264,41 @@ class BlackHole3DCanvas(FigureCanvas):
 
         if self.black_hole_data:
             rs = self.black_hole_data['rs']
-            self.draw_black_hole()
-            self.draw_coordinate_grid(rs)
-            self.draw_light_rays([rs * 2, rs * 3, rs * 5, rs * 10], rs)
+            if self.show_event_horizon or self.show_photon_sphere or self.show_isco:
+                self.draw_black_hole()
+            if self.show_coordinate_grid:
+                self.draw_coordinate_grid(rs)
+            if self.show_light_rays and self.draw_static_light_rays:
+                self.draw_light_rays([rs * 2, rs * 3, rs * 5, rs * 10], rs)
 
-        self.draw_observer()
+        if self.show_observer:
+            self.draw_observer()
+        self._set_equal_limits()
         self.draw()
+
+    def _set_equal_limits(self):
+        """Keep equal scale so spheres don't look like ellipsoids."""
+        # Use Rs units (Rs = 1) for view sizing
+        obs_extent = float(np.max(np.abs(self.observer_pos))) if self.observer_pos is not None else 0.0
+        ray_extent = 0.0
+        if self.light_rays:
+            for line in self.light_rays:
+                x, y, z = line.get_data_3d()
+                if len(x):
+                    ray_extent = max(
+                        ray_extent,
+                        float(np.max(np.abs(x))),
+                        float(np.max(np.abs(y))),
+                        float(np.max(np.abs(z)))
+                    )
+        # Keep focus near the black hole even if the observer is very far away
+        obs_extent = min(obs_extent, 30.0)
+        base_extent = max(20.0, obs_extent, ray_extent)
+        base_extent = min(base_extent, 80.0)
+        base_extent = base_extent / max(self.zoom_factor, 0.2)
+        self.axes.set_xlim([-base_extent, base_extent])
+        self.axes.set_ylim([-base_extent, base_extent])
+        self.axes.set_zlim([-base_extent, base_extent])
 
     def start_animation(self):
         """Start the 3D animation."""
@@ -326,6 +381,73 @@ class Schwarzschild3DSimulator(ScienceHubTool):
 
         # Initialize with default values
         self.update_visualization()
+
+        # Apply dark theme styling
+        self._apply_style()
+
+    def _apply_style(self):
+        """Apply dark theme styling to match lithosphere simulator."""
+        self.setStyleSheet("""
+            #lsHeader {
+                background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #0b1220, stop:1 #111c33);
+                border: 1px solid #1e2a46;
+                border-radius: 18px;
+            }
+            #lsTitle {
+                color: #eaf2ff;
+                font-size: 20px;
+                font-weight: 800;
+            }
+            #lsSubtitle {
+                color: #9fb3d9;
+                font-size: 12px;
+            }
+            #lsPanel {
+                background: transparent;
+            }
+            QGroupBox#toolCard, QGroupBox {
+                color: #dbe7ff;
+                font-weight: 700;
+                border: 1px solid #1e2a46;
+                border-radius: 16px;
+                margin-top: 12px;
+                background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #0b1220, stop:1 #0f1930);
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                left: 12px;
+                padding: 0 6px 0 6px;
+            }
+            QLabel { color: #dbe7ff; }
+            QLabel#lsHint { color: #9fb3d9; font-weight: 400; }
+            QComboBox, QDoubleSpinBox, QSpinBox, QLineEdit {
+                background: #0a0f1d;
+                border: 1px solid #1e2a46;
+                border-radius: 12px;
+                padding: 6px 10px;
+                color: #eaf2ff;
+            }
+            QPushButton {
+                background: qlineargradient(x1:0,y1:0,x2:1,y2:1, stop:0 #1a2a54, stop:1 #0f1b38);
+                border: 1px solid #2a3b63;
+                color: #eaf2ff;
+                padding: 8px 12px;
+                border-radius: 14px;
+                font-weight: 700;
+            }
+            QPushButton:hover { border: 1px solid #3d6bff; }
+            QPushButton:pressed { background: #0b1220; }
+            QCheckBox { color: #dbe7ff; }
+            QListWidget {
+                background: #0a0f1d;
+                border: 1px solid #1e2a46;
+                border-radius: 12px;
+                padding: 8px;
+                color: #eaf2ff;
+            }
+            QListWidget::item { padding: 8px; border-radius: 10px; }
+            QListWidget::item:selected { background: #152447; }
+        """)
 
     def setup_control_panel(self, parent_layout):
         """Set up the control panel."""
@@ -459,6 +581,18 @@ class Schwarzschild3DSimulator(ScienceHubTool):
         self.azim_label = QLabel("45°")
         azim_layout.addWidget(self.azim_label)
         camera_layout.addLayout(azim_layout)
+
+        # Zoom slider
+        zoom_layout = QHBoxLayout()
+        zoom_layout.addWidget(QLabel("Zoom:"))
+        self.zoom_slider = QSlider(Qt.Orientation.Horizontal)
+        self.zoom_slider.setRange(1, 80)
+        self.zoom_slider.setValue(5)
+        self.zoom_slider.valueChanged.connect(self.on_zoom_changed)
+        zoom_layout.addWidget(self.zoom_slider)
+        self.zoom_label = QLabel("1.0x")
+        zoom_layout.addWidget(self.zoom_label)
+        camera_layout.addLayout(zoom_layout)
 
         # Preset views
         preset_layout = QHBoxLayout()
@@ -611,6 +745,12 @@ class Schwarzschild3DSimulator(ScienceHubTool):
 
         self.canvas_3d.update_view(elev, azim)
 
+    def on_zoom_changed(self):
+        """Handle zoom slider changes."""
+        zoom_factor = self.zoom_slider.value() / 5.0
+        self.zoom_label.setText(f"{zoom_factor:.1f}x")
+        self.canvas_3d.set_zoom(zoom_factor)
+
     def set_preset_view(self, elev: int, azim: int):
         """Set preset camera view."""
         self.elev_slider.setValue(elev)
@@ -629,13 +769,35 @@ class Schwarzschild3DSimulator(ScienceHubTool):
         observer_pos = np.array([0, 0, distance_rs])
         self.canvas_3d.update_observer(observer_pos)
 
+        # Sync visibility toggles with canvas
+        self.canvas_3d.show_event_horizon = self.show_event_horizon.isChecked()
+        self.canvas_3d.show_photon_sphere = self.show_photon_sphere.isChecked()
+        self.canvas_3d.show_isco = self.show_isco.isChecked()
+        self.canvas_3d.show_light_rays = self.show_light_rays.isChecked()
+        self.canvas_3d.show_coordinate_grid = self.show_coordinate_grid.isChecked()
+        self.canvas_3d.show_observer = self.show_observer.isChecked()
+
         # Redraw
         self.canvas_3d.redraw()
 
         # Update info
         self.update_info()
 
-        self.init_light_rays()
+        # Initialize light rays
+        if self.show_light_rays.isChecked():
+            self.init_light_rays()
+        else:
+            for line in self.light_ray_lines:
+                try:
+                    line.remove()
+                except NotImplementedError:
+                    # Fallback for artists that cannot be removed
+                    line.set_data_3d([], [], [])
+            self.light_ray_lines.clear()
+            self.cached_rays.clear()
+        # Reset phase if animating
+        if self.animate_light_rays.isChecked() and not self.anim_timer.isActive():
+            self.light_phase = 0
 
 
     def update_info(self):
@@ -677,30 +839,88 @@ Camera: {self.elev_slider.value()}° elev, {self.azim_slider.value()}° azim"""
             x, y = traj
             z = np.zeros_like(x)
 
-            line, = self.canvas_3d.axes.plot(
-            [], [], [],
-            color='#00ffff',     # brighter cyan
-            linewidth=3.5,       # thicker
-            alpha=1.0
-        )
-            self.cached_rays[line] = (x, y, z)
+            self.cached_rays[len(self.cached_rays)] = (x, y, z)
+
+        # Set plot limits to include light rays
+        if self.cached_rays:
+            all_x = np.concatenate([x for x, y, z in self.cached_rays.values()])
+            all_y = np.concatenate([y for x, y, z in self.cached_rays.values()])
+            all_z = np.concatenate([z for x, y, z in self.cached_rays.values()])
+            max_extent = max(np.abs(all_x).max(), np.abs(all_y).max(), np.abs(all_z).max())
+            self.canvas_3d.axes.set_xlim([-max_extent*1.1, max_extent*1.1])
+            self.canvas_3d.axes.set_ylim([-max_extent*1.1, max_extent*1.1])
+            self.canvas_3d.axes.set_zlim([-max_extent*1.1, max_extent*1.1])
+        self._ensure_light_ray_artists()
+
+    def _ensure_light_ray_artists(self):
+        """Ensure light ray artists exist and match cached rays count."""
+        target_count = len(self.cached_rays)
+        if len(self.light_ray_lines) == target_count:
+            return
+        # Remove any existing artists
+        for line in self.light_ray_lines:
+            line.remove()
+        self.light_ray_lines.clear()
+
+        for _ in range(target_count):
+            line, = self.canvas_3d.axes.plot([], [], [],
+                                             color='white', linewidth=2, alpha=0.9, zorder=10)
             self.light_ray_lines.append(line)
 
     def on_animation_changed(self, state):
         """Handle animation toggle changes."""
-        # Animation logic would go here
-        pass
+        # Update static light ray drawing based on animation state
+        self.canvas_3d.draw_static_light_rays = not self.animate_light_rays.isChecked()
+        
+        # Initialize animated light rays if enabled
+        if self.animate_light_rays.isChecked():
+            if not self.show_light_rays.isChecked():
+                return
+            self.init_light_rays()
+            # Remove any previously drawn static rays
+            for line in self.canvas_3d.light_rays:
+                line.remove()
+            self.canvas_3d.light_rays.clear()
+            # Show full rays immediately
+            for line, (x, y, z) in zip(self.light_ray_lines, self.cached_rays.values()):
+                line.set_data_3d(x, y, z)
+            self.canvas_3d.draw_idle()
+        else:
+            # Clear animated rays and redraw static ones
+            for line in self.light_ray_lines:
+                line.remove()
+            self.light_ray_lines.clear()
+            self.cached_rays.clear()
+            self.canvas_3d.redraw()
 
     def start_animation(self):
-        interval = int(100 / self.animation_speed.value())  # ms
+        # Reset light phase for animation
+        if self.animate_light_rays.isChecked():
+            self.light_phase = 0
+        self.camera_angle_anim = 0
+        interval = int(250 / self.animation_speed.value())  # ms
+        interval = max(interval, 30)
         self.anim_timer.start(interval)
 
     def stop_animation(self):
         self.anim_timer.stop()
+        # Show full light rays when animation stops
+        if self.animate_light_rays.isChecked():
+            # Plot full rays using existing artists
+            self._ensure_light_ray_artists()
+            for line, (x, y, z) in zip(self.light_ray_lines, self.cached_rays.values()):
+                line.set_data_3d(x, y, z)
+            self.canvas_3d.draw_idle()
 
     def reset_animation(self):
         self.stop_animation()
         self.camera_angle_anim = 0
+        self.light_phase = 0
+        # Reset light rays to initial state
+        if self.animate_light_rays.isChecked():
+            for line in self.light_ray_lines:
+                line.set_data_3d([], [], [])
+            self.canvas_3d.draw_idle()
         self.light_phase = 0
         self.set_preset_view(30, 45)
         self.update_visualization()
@@ -718,10 +938,18 @@ Camera: {self.elev_slider.value()}° elev, {self.azim_slider.value()}° azim"""
             self.animate_light_rays_step()
 
     def animate_light_rays_step(self):
+        if not self.show_light_rays.isChecked():
+            return
         phase = self.light_phase
         self.light_phase = (self.light_phase + 2) % 100
 
-        for line, (x, y, z) in self.cached_rays.items():
+        if not self.cached_rays:
+            return
+
+        self._ensure_light_ray_artists()
+
+        # Update existing lines with current phase
+        for line, (x, y, z) in zip(self.light_ray_lines, self.cached_rays.values()):
             end = max(2, int(len(x) * phase / 100))
             line.set_data_3d(x[:end], y[:end], z[:end])
 

@@ -9,11 +9,11 @@ from PyQt6.QtWidgets import *
 from PyQt6.QtCore import *
 from PyQt6.QtGui import *
 
-from sciencehub.domains.astronomy.schwarzschild_black_hole_simulator import (
+from sciencehub.data.functions.schwarzschild_black_hole_simulator import (
     SchwarzschildBlackHoleSimulator,
     TOOL_META
 )
-from sciencehub.domains.astronomy.schwarzschild_3d_simulator import (
+from sciencehub.data.functions.schwarzschild_3d_simulator import (
     Schwarzschild3DSimulator,
     TOOL_META_3D
 )
@@ -69,35 +69,23 @@ class IntegratedBlackHoleSimulator(QMainWindow):
         desc_label.setObjectName("description")
         main_layout.addWidget(desc_label)
 
-        # Main content area
-        content_widget = QWidget()
-        content_layout = QHBoxLayout(content_widget)
+        # Main content area as tabs
+        tabs = QTabWidget()
+        tabs.setObjectName("simTabs")
 
-        # Left panel - 2D Simulator
-        left_panel = QWidget()
-        left_layout = QVBoxLayout(left_panel)
+        # 2D Simulator tab
+        tab_2d = QWidget()
+        tab_2d_layout = QVBoxLayout(tab_2d)
+        tab_2d_layout.addWidget(self.simulator_2d)
+        tabs.addTab(tab_2d, "2D Analysis")
 
-        left_title = QLabel("2D Analysis & Calculations")
-        left_title.setObjectName("panelTitle")
-        left_layout.addWidget(left_title)
+        # 3D Simulator tab
+        tab_3d = QWidget()
+        tab_3d_layout = QVBoxLayout(tab_3d)
+        tab_3d_layout.addWidget(self.simulator_3d)
+        tabs.addTab(tab_3d, "3D Visualization")
 
-        left_layout.addWidget(self.simulator_2d)
-
-        content_layout.addWidget(left_panel, 1)
-
-        # Right panel - 3D Simulator
-        right_panel = QWidget()
-        right_layout = QVBoxLayout(right_panel)
-
-        right_title = QLabel("3D Visualization")
-        right_title.setObjectName("panelTitle")
-        right_layout.addWidget(right_title)
-
-        right_layout.addWidget(self.simulator_3d)
-
-        content_layout.addWidget(right_panel, 1)
-
-        main_layout.addWidget(content_widget)
+        main_layout.addWidget(tabs)
 
         # Status bar
         self.status_bar = self.statusBar()
