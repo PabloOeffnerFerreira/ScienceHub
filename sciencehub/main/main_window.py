@@ -1,3 +1,5 @@
+from typing import Optional
+
 from PyQt6.QtWidgets import QMainWindow, QWidget, QHBoxLayout, QMessageBox
 
 from sciencehub.ui.bindings.styles import apply_stylesheet
@@ -22,7 +24,7 @@ class MainWindow(QMainWindow):
         central = QWidget()
         layout = QHBoxLayout(central)
 
-        self.sidebar = Sidebar(self._open_tool)
+        self.sidebar = Sidebar(self._open_tool, self._open_home)
         self.main_area = MainArea()
 
         layout.addWidget(self.sidebar)
@@ -34,11 +36,20 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
 
 
-    def _open_tool(self, tool_name: str):
+    def _open_home(self):
+        self.main_area.show_home()
+
+    def _open_tool(self, tool_name: str, category: Optional[str] = None):
         try:
-            category = next(
-                cat for cat, btn in self.sidebar.category_buttons.items() if btn.isChecked()
-            )
+            if category is None:
+                category = next(
+                    cat
+                    for cat, btn in self.sidebar.category_buttons.items()
+                    if btn.isChecked()
+                )
+            else:
+                if category in self.sidebar.category_buttons:
+                    self.sidebar._on_category_selected(category)
 
             module_name = tool_name
             category_folder = category.lower().replace(" ", "_")

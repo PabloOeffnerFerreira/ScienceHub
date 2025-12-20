@@ -5,10 +5,11 @@ from sciencehub.main.tool_registry import get_categories, get_tools_for_category
 from PyQt6.QtCore import Qt
 
 class Sidebar(QWidget):
-    def __init__(self, on_open_tool):
+    def __init__(self, on_open_tool, on_open_home=None):
         super().__init__()
         self.setObjectName("sidebar")
         self.on_open_tool = on_open_tool
+        self.on_open_home = on_open_home
         self.category_buttons = {}
         self._build_ui()
         self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
@@ -23,6 +24,10 @@ class Sidebar(QWidget):
         sidebar_layout.setSpacing(5)
 
         self.setLayout(sidebar_layout)
+
+        home_button = QPushButton("Home")
+        home_button.clicked.connect(self._on_home_clicked)
+        sidebar_layout.addWidget(home_button)
 
         self.tools_combo = QComboBox()
         self.tools_combo.addItem("Select a category above")
@@ -46,6 +51,10 @@ class Sidebar(QWidget):
 
         if categories:
             self.category_buttons[categories[0]].click()
+
+    def _on_home_clicked(self):
+        if self.on_open_home:
+            self.on_open_home()
 
     def _on_category_selected(self, category):
         for cat, button in self.category_buttons.items():
